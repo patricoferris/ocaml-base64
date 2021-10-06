@@ -123,7 +123,6 @@
         ((emap ((b4 lsl 3) lor (b5 lsr 5) land b5_mask) lsl 8)
         lor emap (b5 land b5_mask))
       in
-     print_int n;
      let rec enc j i =
        if i = n
        then ()
@@ -237,11 +236,10 @@
         (b1 lsl 35) lor (b2 lsl 30) lor (b3 lsl 25) lor (b4 lsl 20) lor 
         (b5 lsl 15) lor (b6 lsl 10) lor (b7 lsl 5) lor b8 
        in
-       Format.printf "b1: %i b2: %i b3: %i b4: %i b5: %i b6: %i b7: %i b8: %i" b1 b2 b3 b4 b5 b6 b7 b8;
        set_be_uint16 res j (x lsr 24);
        set_be_uint16 res (j + 2) ((x lsr 8) land 0xffff);
-       set_uint8 res (j + 4) (x land 0xff);
-       Format.printf "\nBYTES: %s\n" @@ Bytes.to_string res in
+       set_uint8 res (j + 4) (x land 0xff)
+      in
  
      let dmap i =
        let x = Array.unsafe_get dmap i in
@@ -342,7 +340,7 @@
     
      match dec 0 0 with
      | 0 -> Ok (Bytes.unsafe_to_string res, 0, n')
-     | pad -> (Format.printf "n':%i, pad: %i\n" n' pad; Ok (Bytes.unsafe_to_string res, 0, n' - pad))
+     | pad -> Ok (Bytes.unsafe_to_string res, 0, n' - pad)
      | exception Out_of_bounds ->
          error_msgf "Wrong padding"
          (* appear only when [pad = true] and when length of input is not a multiple of 4. *)
@@ -353,9 +351,7 @@
  
  let decode ?pad ?(alphabet = default_alphabet) ?off ?len input =
    match decode_sub ?pad alphabet ?off ?len input with
-   | Ok (res, off, len) -> 
-      Format.printf "%s %i %i\n" res off len;
-      Ok (String.sub res off len)
+   | Ok (res, off, len) -> Ok (String.sub res off len)
    | Error _ as err -> err
  
  let decode_sub ?pad ?(alphabet = default_alphabet) ?off ?len input =
