@@ -7,8 +7,17 @@
 (rule
  (copy %{read:../config/which-unsafe-file} unsafe.ml))
 
+(rule
+ (copy %{read:../config/which-unsafe-file} unsafe32.ml))
+
 (library
  (name base64_rfc2045)
  (modules base64_rfc2045)
  (public_name base64.rfc2045)
+ (libraries bytes))
+
+(library
+ (name base32)
+ (modules unsafe32 base32)
+ (public_name base64.base32)
  (libraries bytes))

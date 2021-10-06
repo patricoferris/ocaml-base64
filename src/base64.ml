@@ -95,12 +95,15 @@ let encode_sub pad { emap; _ } ?(off = 0) ?len input =
   if len < 0 || off < 0 || off > String.length input - len
   then error_msgf "Invalid bounds"
   else
+    (* Length of input string *)
     let n = len in
+    (* n // 3 -> 3 byte inputs groups converted to 4 bytes *)
     let n' = n // 3 * 4 in
     let res = Bytes.create n' in
 
     let emap i = Array.unsafe_get emap i in
 
+    (* For every 3 bytes output four bytes *)
     let emit b1 b2 b3 i =
       unsafe_set_be_uint16 res i
         ((emap ((b1 lsr 2) land 0x3f) lsl 8)

@@ -1,5 +1,6 @@
 (executable
  (modes byte exe)
+ (modules test)
  (name test)
  (libraries base64 base64.rfc2045 rresult alcotest bos))
 
@@ -9,3 +10,8 @@
   (:exe test.exe))
  (action
   (run %{exe} --color=always)))
+
+(test
+ (name test32)
+ (modules test32)
+ (libraries alcotest base64 base64.base32))
