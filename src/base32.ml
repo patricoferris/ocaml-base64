@@ -4,6 +4,7 @@
  * Copyright (c) 2014-2016 Anil Madhavapeddy <anil@recoil.org>
  * Copyright (c) 2016 David Kaloper Meršinjak
  * Copyright (c) 2018 Romain Calascibetta <romain.calascibetta@gmail.com>
+ * Copyright (c) 2021 Patrick Ferris <patrick@sirref.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -203,8 +204,8 @@
    if len < 0 || off < 0 || off > String.length input - len
    then error_msgf "Invalid bounds"
    else
-     let n = len // 4 * 4 in
-     let n' = n // 4 * 3 in
+     let n = len // 8 * 8 in
+     let n' = n // 8 * 5 in
      let res = Bytes.create n' in
      let invalid_pad_overflow = pad in
  
@@ -230,10 +231,17 @@
        if off < 0 || off >= Bytes.length t then () else unsafe_set_uint8 t off v
      in
  
-     let emit a b c d j =
-       let x = (a lsl 18) lor (b lsl 12) lor (c lsl 6) lor d in
-       set_be_uint16 res j (x lsr 8) ;
-       set_uint8 res (j + 2) (x land 0xff) in
+     (* From 8 bytes to 5 bytes *)
+     let emit b1 b2 b3 b4 b5 b6 b7 b8 j =
+       let x = 
+        (b1 lsl 35) lor (b2 lsl 30) lor (b3 lsl 25) lor (b4 lsl 20) lor 
+        (b5 lsl 15) lor (b6 lsl 10) lor (b7 lsl 5) lor b8 
+       in
+       Format.printf "b1: %i b2: %i b3: %i b4: %i b5: %i b6: %i b7: %i b8: %i" b1 b2 b3 b4 b5 b6 b7 b8;
+       set_be_uint16 res j (x lsr 24);
+       set_be_uint16 res (j + 2) ((x lsr 8) land 0xffff);
+       set_uint8 res (j + 4) (x land 0xff);
+       Format.printf "\nBYTES: %s\n" @@ Bytes.to_string res in
  
      let dmap i =
        let x = Array.unsafe_get dmap i in
@@ -245,20 +253,22 @@
           characters we should have from [input], we got at this stage only padding
           characters and we need to delete them, so for each [====], we delete 3
           bytes. *)
-       let pad = ref (pad + 3) in
+       let pad = ref (pad + 5) in (* This right ? *)
        let idx = ref idx in
  
-       while !idx + 4 < len do
+       while !idx + 8 < len do
          (* use [unsafe_get_uint16] instead [unsafe_get_uint32] to avoid allocation
             of [int32]. Of course, [3d3d3d3d] is [====]. *)
          if unsafe_get_uint16 input (off + !idx) <> 0x3d3d
             || unsafe_get_uint16 input (off + !idx + 2) <> 0x3d3d
+            || unsafe_get_uint16 input (off + !idx + 4) <> 0x3d3d
+            || unsafe_get_uint16 input (off + !idx + 6) <> 0x3d3d
          then raise Not_found ;
  
          (* We got something bad, should be a valid character according to
             [alphabet] but outside the scope. *)
-         idx := !idx + 4 ;
-         pad := !pad + 3
+         idx := !idx + 8 ;
+         pad := !pad + 5
        done ;
        while !idx < len do
          if unsafe_get_uint8 input (off + !idx) <> padding then raise Not_found ;
@@ -271,54 +281,68 @@
        if i = n
        then 0
        else
-         let d, pad =
-           let x = get_uint8_or_padding input (i + 3) in
+         let b8, pad =
+           let x = get_uint8_or_padding input (i + 7) in
            try (dmap x, 0) with Not_found when x = padding -> (0, 1) in
          (* [Not_found] iff [x ∉ alphabet and x <> '='] can leak. *)
-         let c, pad =
+        let b7, pad =
+         let x = get_uint8_or_padding input (i + 6) in
+         try (dmap x, pad) with Not_found when x = padding && pad = 1 -> (0, 2) in
+       (* [Not_found] iff [x ∉ alphabet and x <> '='] can leak. *)
+        let b6, pad =
+           let x = get_uint8_or_padding input (i + 5) in
+           try (dmap x, pad) with Not_found when x = padding && pad = 2 -> (0, 3) in
+         (* [Not_found] iff [x ∉ alphabet and x <> '='] can leak. *)
+        let b5, pad =
+           let x = get_uint8_or_padding input (i + 4) in
+           try (dmap x, pad) with Not_found when x = padding && pad = 3 -> (0, 4) in
+         (* [Not_found] iff [x ∉ alphabet and x <> '='] can leak. *)
+        let b4, pad =
+         let x = get_uint8_or_padding input (i + 3) in
+         try (dmap x, pad) with Not_found when x = padding && pad = 4 -> (0, 5) in
+       (* [Not_found] iff [x ∉ alphabet and x <> '='] can leak. *)
+        let b3, pad =
            let x = get_uint8_or_padding input (i + 2) in
            try (dmap x, pad)
-           with Not_found when x = padding && pad = 1 -> (0, 2) in
+           with Not_found when x = padding && pad = 5 -> (0, 6) in
          (* [Not_found] iff [x ∉ alphabet and x <> '='] can leak. *)
-         let b, pad =
+        let b2, pad =
            let x = get_uint8_or_padding input (i + 1) in
            try (dmap x, pad)
-           with Not_found when x = padding && pad = 2 -> (0, 3) in
+           with Not_found when x = padding && pad = 6 -> (0, 7) in
          (* [Not_found] iff [x ∉ alphabet and x <> '='] can leak. *)
-         let a, pad =
+        let b1, pad =
            let x = get_uint8_or_padding input i in
            try (dmap x, pad)
-           with Not_found when x = padding && pad = 3 -> (0, 4) in
+           with Not_found when x = padding && pad = 7 -> (0, 8) in
  
          (* [Not_found] iff [x ∉ alphabet and x <> '='] can leak. *)
-         emit a b c d j ;
+         emit b1 b2 b3 b4 b5 b6 b7 b8 j ;
  
-         if i + 4 = n (* end of input in anyway *)
+         if i + 8 = n (* end of input in anyway *)
          then
            match pad with
            | 0 -> 0
-           | 4 ->
-               (* assert (invalid_pad_overflow = false) ; *)
-               3
-           (* [get_uint8] lies and if we get [4], that mean we got one or more (at
-              most 4) padding character. In this situation, because we round length
-              of [res] (see [n // 4]), we need to delete 3 bytes. *)
+           | 3 -> 2
+           | 4 -> 3
+           | 6 -> 4
            | pad -> pad
-         else
-           match pad with
-           | 0 -> dec (j + 3) (i + 4)
+          else
+          (* XXX(patricoferris): pad is probably wrong *)
+           match pad with 
+           | 0 -> dec (j + 5) (i + 8)
            | 4 ->
                (* assert (invalid_pad_overflow = false) ; *)
-               only_padding 3 (i + 4)
+               only_padding 5 (i + 8)
            (* Same situation than above but we should get only more padding
               characters then. *)
            | pad ->
                if invalid_pad_overflow = true then raise Too_much_input ;
-               only_padding pad (i + 4) in
- 
+               only_padding pad (i + 8) in
+    
      match dec 0 0 with
      | 0 -> Ok (Bytes.unsafe_to_string res, 0, n')
-     | pad -> Ok (Bytes.unsafe_to_string res, 0, n' - pad)
+     | pad -> (Format.printf "n':%i, pad: %i\n" n' pad; Ok (Bytes.unsafe_to_string res, 0, n' - pad))
      | exception Out_of_bounds ->
          error_msgf "Wrong padding"
          (* appear only when [pad = true] and when length of input is not a multiple of 4. *)
@@ -329,7 +353,9 @@
  
  let decode ?pad ?(alphabet = default_alphabet) ?off ?len input =
    match decode_sub ?pad alphabet ?off ?len input with
-   | Ok (res, off, len) -> Ok (String.sub res off len)
+   | Ok (res, off, len) -> 
+      Format.printf "%s %i %i\n" res off len;
+      Ok (String.sub res off len)
    | Error _ as err -> err
  
  let decode_sub ?pad ?(alphabet = default_alphabet) ?off ?len input =
