@@ -1,3 +1,4 @@
-(executable
- (name benchmarks)
- (libraries base64 core_bench))
+; (executable
+;  (alias bench)
+;  (name benchmarks)
+;  (libraries base64 core_bench))
